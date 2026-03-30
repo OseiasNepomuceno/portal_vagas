@@ -39,28 +39,19 @@ st.markdown("""
 def buscar_adzuna(termo, local, qtd):
     try:
         import re
-        # Limpeza radical de caracteres não alfanuméricos
-        app_id = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_ID"]))
-        app_key = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_KEY"]))
+        # 1. Limpeza total de ID e KEY (apenas letras e números)
+        aid = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_ID"]))
+        akey = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_KEY"]))
 
-        url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
+        # 2. Montagem manual da URL para evitar erros de biblioteca
+        # Adzuna exige: /search/1?app_id={ID}&app_key={KEY}&what={TERMO}...
+        base_url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
+        full_url = f"{base_url}?app_id={aid}&app_key={akey}&results_per_page={qtd}&what={termo}&where={local}&content-type=application/json"
         
-        # Parâmetros limpos
-        params = {
-            "app_id": app_id, 
-            "app_key": app_key,
-            "results_per_page": qtd, 
-            "what": termo, 
-            "where": local, 
-            "content-type": "application/json"
-        }
+        # 3. Requisição com identificação de navegador
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(full_url, headers=headers, timeout=15)
         
-        # Adicionando um Header de navegador para evitar bloqueios
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        res = requests.get(url, params=params, headers=headers, timeout=10)
         st.sidebar.write(f"📡 Adzuna Status: {res.status_code}")
         
         if res.status_code == 200:
@@ -73,10 +64,13 @@ def buscar_adzuna(termo, local, qtd):
                 "url": v.get('redirect_url'), 
                 "fonte": "Adzuna"
             } for v in vagas]
+        elif res.status_code == 401:
+            st.sidebar.error("⚠️ Adzuna: Chave Recusada. Gere uma NOVA CHAVE no painel da Adzuna.")
+            return []
         else:
             return []
     except Exception as e:
-        st.sidebar.error(f"Erro Adzuna: {e}")
+        st.sidebar.error(f"Erro de conexão: {e}")
         return []
 
 def buscar_jooble(termo, local):
