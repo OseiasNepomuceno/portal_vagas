@@ -75,23 +75,59 @@ def buscar_adzuna(termo, local, qtd):
 
 def buscar_jooble(termo, local):
     try:
-        url = f"https://br.jooble.org/api/{st.secrets['JOOBLE_KEY']}"
-        payload = {"keywords": termo, "location": local}
-        res = requests.post(url, json=payload)
+        import re
+        # 1. Limpeza radical da chave (apenas letras, números e hífens)
+        # A Jooble usa hífens na chave (ex: 5c2fe...-ab3e-...)
+        raw_key = str(st.secrets["JOOBLE_KEY"]).strip()
+        key = re.sub(r'[^a-zA-Z0-9-]', '', raw_key)
+        
+        url = f"https://br.jooble.org/api/{key}"
+        
+        # 2. O Payload (Corpo) deve ser um JSON puro e simples
+        # A Jooble prefere "keywords" e "location"
+        payload = {
+            "keywords": termo,
+            "location": local
+        }
+        
+        # 3. Headers: Jooble exige Content-Type application/json
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0"
+        }
+        
+        # Fazendo a requisição POST (Jooble usa POST, não GET)
+        res = requests.post(url, json=payload, headers=headers, timeout=15)
         
         st.sidebar.write(f"📡 Jooble Status: {res.status_code}")
         
         if res.status_code == 200:
+            dados = res.json()
+            # A Jooble retorna os resultados na chave 'jobs'
+            vagas_brutas = dados.get('jobs', [])
+            
+            # Se não houver 'jobs', pode ser que o limite diário foi atingido ou chave inválida
+            if not vagas_brutas and 'error' in dados:
+                st.sidebar.warning(f"Jooble diz: {dados.get('error')}")
+                return []
+                
             return [{
-                "titulo": v.get('title'), "empresa": v.get('company', 'Confidencial'),
-                "local": v.get('location'), "desc": v.get('snippet', '').replace('<br/>', ' ')[:250] + "...",
-                "url": v.get('link'), "fonte": "Jooble"
-            } for v in res.json().get('jobs', [])]
-        else:
-            st.sidebar.error(f"Erro Jooble: {res.text}")
+                "titulo": v.get('title', 'Vaga sem título'), 
+                "empresa": v.get('company', 'Confidencial'),
+                "local": v.get('location', 'Brasil'), 
+                "desc": v.get('snippet', '').replace('<br/>', ' ').replace('<b>', '').replace('</b>', '')[:250] + "...",
+                "url": v.get('link'), 
+                "fonte": "Jooble"
+            } for v in vagas_brutas]
+        
+        elif res.status_code == 403:
+            st.sidebar.error("⚠️ Jooble: Acesso Proibido (403). Verifique seu e-mail para confirmar a API.")
             return []
+        else:
+            return []
+            
     except Exception as e:
-        st.sidebar.error(f"Falha de conexão Jooble: {e}")
+        st.sidebar.error(f"Erro técnico Jooble: {e}")
         return []
 
 # --- INTERFACE PRINCIPAL ---
