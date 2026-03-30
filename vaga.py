@@ -8,25 +8,19 @@ from google.oauth2.service_account import Credentials
 # 1. Configuração da Página
 st.set_page_config(page_title="Core Essence | Radar de Empregos", page_icon="💼", layout="wide")
 
-# --- FUNÇÃO PARA SALVAR LOG DE PESQUISA NO GOOGLE SHEETS ---
+# --- FUNÇÃO PARA SALVAR LOG DE PESQUISA ---
 def salvar_log_pesquisa(termo, local, qtd_encontrada):
     try:
-        # Configuração de Escopo e Credenciais (Usando os Secrets do Portal Governamental)
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds_dict = st.secrets["gcp_service_account"]
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(credentials)
-        
-        # Abre a planilha e a aba específica
         sh = client.open_by_key(st.secrets["ID_LICENCAS"])
         wks = sh.worksheet("LOG_PESQUISAS")
-        
-        # Prepara a linha (Data formatada, Termo, Local, Qtd)
         agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         wks.append_row([agora, termo, local, qtd_encontrada])
     except Exception as e:
-        # Erro silencioso para não travar a experiência do usuário
-        print(f"Erro ao salvar log: {e}")
+        st.sidebar.error(f"Erro no Google Sheets: {e}")
 
 # --- ESTILIZAÇÃO CSS ---
 st.markdown("""
@@ -41,37 +35,56 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE BUSCA (ADZUNA E JOOBLE) ---
+# --- FUNÇÕES DE BUSCA COM DEBUG ---
 def buscar_adzuna(termo, local, qtd):
     try:
         url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
         params = {
-            "app_id": st.secrets["ADZUNA_ID"], "app_key": st.secrets["ADZUNA_KEY"],
-            "results_per_page": qtd, "what": termo, "where": local, "content-type": "application/json"
+            "app_id": st.secrets["ADZUNA_ID"], 
+            "app_key": st.secrets["ADZUNA_KEY"],
+            "results_per_page": qtd, 
+            "what": termo, 
+            "where": local, 
+            "content-type": "application/json"
         }
         res = requests.get(url, params=params)
+        
+        # Mostra o status na barra lateral para sabermos se a chave funcionou
+        st.sidebar.write(f"📡 Adzuna Status: {res.status_code}")
+        
         if res.status_code == 200:
             return [{
                 "titulo": v.get('title'), "empresa": v.get('company', {}).get('display_name', 'Confidencial'),
                 "local": v.get('location', {}).get('display_name'), "desc": v.get('description', '')[:250] + "...",
                 "url": v.get('redirect_url'), "fonte": "Adzuna"
             } for v in res.json().get('results', [])]
-    except: return []
-    return []
+        else:
+            st.sidebar.error(f"Erro Adzuna: {res.text}")
+            return []
+    except Exception as e:
+        st.sidebar.error(f"Falha de conexão Adzuna: {e}")
+        return []
 
 def buscar_jooble(termo, local):
     try:
         url = f"https://br.jooble.org/api/{st.secrets['JOOBLE_KEY']}"
         payload = {"keywords": termo, "location": local}
         res = requests.post(url, json=payload)
+        
+        st.sidebar.write(f"📡 Jooble Status: {res.status_code}")
+        
         if res.status_code == 200:
             return [{
                 "titulo": v.get('title'), "empresa": v.get('company', 'Confidencial'),
                 "local": v.get('location'), "desc": v.get('snippet', '').replace('<br/>', ' ')[:250] + "...",
                 "url": v.get('link'), "fonte": "Jooble"
             } for v in res.json().get('jobs', [])]
-    except: return []
-    return []
+        else:
+            st.sidebar.error(f"Erro Jooble: {res.text}")
+            return []
+    except Exception as e:
+        st.sidebar.error(f"Falha de conexão Jooble: {e}")
+        return []
 
 # --- INTERFACE PRINCIPAL ---
 def main():
@@ -80,7 +93,7 @@ def main():
     with st.sidebar:
         st.header("🔍 Filtros de Busca")
         termo = st.text_input("O que você procura?", placeholder="Ex: Vendedor, TI...")
-        local = st.text_input("Cidade ou Estado", placeholder="Ex: Londrina, PR")
+        local = st.text_input("Cidade ou Estado", placeholder="Ex: Brasil")
         qtd = st.slider("Resultados por fonte", 5, 20, 10)
         btn = st.button("Buscar Agora")
 
@@ -89,29 +102,32 @@ def main():
             st.error("Por favor, digite um cargo.")
             return
 
-        with st.spinner('Consultando Adzuna e Jooble...'):
-            res_adzuna = buscar_adzuna(termo, local, qtd)
-            res_jooble = buscar_jooble(termo, local)
+        # Ajuste de localidade padrão
+        local_final = local if local else "Brasil"
+
+        with st.spinner(f'Buscando "{termo}" em "{local_final}"...'):
+            res_adzuna = buscar_adzuna(termo, local_final, qtd)
+            res_jooble = buscar_jooble(termo, local_final)
             todas_vagas = res_adzuna + res_jooble
 
-            # --- AQUI ESTÁ O "PULO DO GATO": SALVANDO O LOG ---
-            salvar_log_pesquisa(termo, local, len(todas_vagas))
+            salvar_log_pesquisa(termo, local_final, len(todas_vagas))
 
             if todas_vagas:
-                st.success(f"Sucesso! Encontramos {len(todas_vagas)} vagas.")
+                st.success(f"Encontramos {len(todas_vagas)} vagas disponíveis!")
                 for v in todas_vagas:
-                    st.markdown(f"""
-                    <div class="vaga-card">
-                        <span class="fonte-tag">{v['fonte']}</span>
-                        <div class="vaga-titulo">{v['titulo']}</div>
-                        <p><b>🏢 {v['empresa']}</b> | 📍 {v['local']}</p>
-                        <p style='font-size: 14px; color: #444;'>{v['desc']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.link_button(f"🚀 Candidatar-se via {v['fonte']}", v['url'])
-                    st.write("")
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="vaga-card">
+                            <span class="fonte-tag">{v['fonte']}</span>
+                            <div class="vaga-titulo">{v['titulo']}</div>
+                            <p><b>🏢 {v['empresa']}</b> | 📍 {v['local']}</p>
+                            <p style='font-size: 14px; color: #444;'>{v['desc']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.link_button(f"🚀 Candidatar-se via {v['fonte']}", v['url'])
+                        st.write("---")
             else:
-                st.warning("Nenhuma vaga encontrada para estes termos.")
+                st.warning(f"Nenhuma vaga de '{termo}' encontrada em '{local_final}'. Tente um termo mais genérico.")
 
 if __name__ == "__main__":
     main()
