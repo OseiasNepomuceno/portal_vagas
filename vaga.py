@@ -38,9 +38,14 @@ st.markdown("""
 # --- FUNÇÕES DE BUSCA COM DEBUG ---
 def buscar_adzuna(termo, local, qtd):
     try:
-        # O .strip() remove espaços e o .replace() remove o traço estranho se ele voltar
-        app_id = str(st.secrets["ADZUNA_ID"]).strip()
-        app_key = str(st.secrets["ADZUNA_KEY"]).strip().replace("—", "").replace("-", "")
+        # Puxa dos secrets e limpa QUALQUER caractere não alfanumérico (espaços, traços, tabs)
+        import re
+        raw_id = str(st.secrets["ADZUNA_ID"])
+        raw_key = str(st.secrets["ADZUNA_KEY"])
+        
+        # O re.sub remove tudo que não for letra ou número
+        app_id = re.sub(r'[^a-zA-Z0-9]', '', raw_id)
+        app_key = re.sub(r'[^a-zA-Z0-9]', '', raw_key)
 
         url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
         params = {
@@ -52,7 +57,10 @@ def buscar_adzuna(termo, local, qtd):
             "content-type": "application/json"
         }
         
-        res = requests.get(url, params=params)
+        # Usamos uma sessão para manter a conexão estável
+        session = requests.Session()
+        res = session.get(url, params=params, timeout=10)
+        
         st.sidebar.write(f"📡 Adzuna Status: {res.status_code}")
         
         if res.status_code == 200:
@@ -66,13 +74,12 @@ def buscar_adzuna(termo, local, qtd):
                 "fonte": "Adzuna"
             } for v in vagas]
         else:
-            # Se der erro, ele mostra o que a Adzuna respondeu
-            st.sidebar.warning(f"Adzuna diz: {res.json().get('exception', 'Erro desconhecido')}")
+            # Se falhar, vamos tentar imprimir o erro bruto para você ver no Log
+            st.sidebar.warning(f"Adzuna diz: {res.text}")
             return []
     except Exception as e:
-        st.sidebar.error(f"Erro de conexão Adzuna: {e}")
+        st.sidebar.error(f"Erro na requisição: {e}")
         return []
-
 def buscar_jooble(termo, local):
     try:
         url = f"https://br.jooble.org/api/{st.secrets['JOOBLE_KEY']}"
