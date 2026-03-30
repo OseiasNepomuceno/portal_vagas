@@ -38,16 +38,14 @@ st.markdown("""
 # --- FUNÇÕES DE BUSCA COM DEBUG ---
 def buscar_adzuna(termo, local, qtd):
     try:
-        # Puxa dos secrets e limpa QUALQUER caractere não alfanumérico (espaços, traços, tabs)
         import re
-        raw_id = str(st.secrets["ADZUNA_ID"])
-        raw_key = str(st.secrets["ADZUNA_KEY"])
-        
-        # O re.sub remove tudo que não for letra ou número
-        app_id = re.sub(r'[^a-zA-Z0-9]', '', raw_id)
-        app_key = re.sub(r'[^a-zA-Z0-9]', '', raw_key)
+        # Limpeza radical de caracteres não alfanuméricos
+        app_id = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_ID"]))
+        app_key = re.sub(r'[^a-zA-Z0-9]', '', str(st.secrets["ADZUNA_KEY"]))
 
         url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
+        
+        # Parâmetros limpos
         params = {
             "app_id": app_id, 
             "app_key": app_key,
@@ -57,10 +55,12 @@ def buscar_adzuna(termo, local, qtd):
             "content-type": "application/json"
         }
         
-        # Usamos uma sessão para manter a conexão estável
-        session = requests.Session()
-        res = session.get(url, params=params, timeout=10)
+        # Adicionando um Header de navegador para evitar bloqueios
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         
+        res = requests.get(url, params=params, headers=headers, timeout=10)
         st.sidebar.write(f"📡 Adzuna Status: {res.status_code}")
         
         if res.status_code == 200:
@@ -74,12 +74,11 @@ def buscar_adzuna(termo, local, qtd):
                 "fonte": "Adzuna"
             } for v in vagas]
         else:
-            # Se falhar, vamos tentar imprimir o erro bruto para você ver no Log
-            st.sidebar.warning(f"Adzuna diz: {res.text}")
             return []
     except Exception as e:
-        st.sidebar.error(f"Erro na requisição: {e}")
+        st.sidebar.error(f"Erro Adzuna: {e}")
         return []
+
 def buscar_jooble(termo, local):
     try:
         url = f"https://br.jooble.org/api/{st.secrets['JOOBLE_KEY']}"
