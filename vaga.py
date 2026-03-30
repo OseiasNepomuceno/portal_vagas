@@ -38,31 +38,39 @@ st.markdown("""
 # --- FUNÇÕES DE BUSCA COM DEBUG ---
 def buscar_adzuna(termo, local, qtd):
     try:
+        # O .strip() remove espaços e o .replace() remove o traço estranho se ele voltar
+        app_id = str(st.secrets["ADZUNA_ID"]).strip()
+        app_key = str(st.secrets["ADZUNA_KEY"]).strip().replace("—", "").replace("-", "")
+
         url = "https://api.adzuna.com/v1/api/jobs/br/search/1"
         params = {
-            "app_id": st.secrets["ADZUNA_ID"], 
-            "app_key": st.secrets["ADZUNA_KEY"],
+            "app_id": app_id, 
+            "app_key": app_key,
             "results_per_page": qtd, 
             "what": termo, 
             "where": local, 
             "content-type": "application/json"
         }
-        res = requests.get(url, params=params)
         
-        # Mostra o status na barra lateral para sabermos se a chave funcionou
+        res = requests.get(url, params=params)
         st.sidebar.write(f"📡 Adzuna Status: {res.status_code}")
         
         if res.status_code == 200:
+            vagas = res.json().get('results', [])
             return [{
-                "titulo": v.get('title'), "empresa": v.get('company', {}).get('display_name', 'Confidencial'),
-                "local": v.get('location', {}).get('display_name'), "desc": v.get('description', '')[:250] + "...",
-                "url": v.get('redirect_url'), "fonte": "Adzuna"
-            } for v in res.json().get('results', [])]
+                "titulo": v.get('title'), 
+                "empresa": v.get('company', {}).get('display_name', 'Confidencial'),
+                "local": v.get('location', {}).get('display_name'), 
+                "desc": v.get('description', '')[:250] + "...",
+                "url": v.get('redirect_url'), 
+                "fonte": "Adzuna"
+            } for v in vagas]
         else:
-            st.sidebar.error(f"Erro Adzuna: {res.text}")
+            # Se der erro, ele mostra o que a Adzuna respondeu
+            st.sidebar.warning(f"Adzuna diz: {res.json().get('exception', 'Erro desconhecido')}")
             return []
     except Exception as e:
-        st.sidebar.error(f"Falha de conexão Adzuna: {e}")
+        st.sidebar.error(f"Erro de conexão Adzuna: {e}")
         return []
 
 def buscar_jooble(termo, local):
